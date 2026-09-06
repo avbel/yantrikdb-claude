@@ -8,6 +8,5 @@
     "url": "https://github.com/avbel"
   },
   "license": "MIT",
-  "keywords": ["memory", "yantrikdb", "hooks", "context", "recall"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": ["memory", "yantrikdb", "hooks", "context", "recall"]
 }
