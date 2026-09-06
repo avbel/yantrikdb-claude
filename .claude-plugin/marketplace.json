@@ -11,7 +11,7 @@
       "displayName": "YantrikDB Hooks",
       "source": "./plugins/yantrikdb-hooks",
       "description": "Digest at session start, recall per prompt, capture + consolidate on compaction and session end.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "keywords": [
         "memory",
