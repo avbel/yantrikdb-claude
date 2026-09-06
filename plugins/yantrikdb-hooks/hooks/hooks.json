@@ -1,0 +1,52 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh session_start.py",
+            "timeout": 30,
+            "statusMessage": "Loading YantrikDB digest..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh user_prompt_submit.py",
+            "timeout": 30,
+            "statusMessage": "Recalling from YantrikDB..."
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh capture.py PreCompact",
+            "timeout": 120,
+            "statusMessage": "Capturing to YantrikDB before compaction..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh capture.py SessionEnd",
+            "timeout": 120,
+            "statusMessage": "Consolidating YantrikDB..."
+          }
+        ]
+      }
+    ]
+  }
+}

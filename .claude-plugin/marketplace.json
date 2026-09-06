@@ -1,0 +1,23 @@
+{
+  "name": "yantrikdb-claude",
+  "owner": {
+    "name": "Andrey Belchikov",
+    "url": "https://github.com/avbel"
+  },
+  "description": "YantrikDB integrations for Claude Code.",
+  "plugins": [
+    {
+      "name": "yantrikdb-hooks",
+      "displayName": "YantrikDB Hooks",
+      "source": "./plugins/yantrikdb-hooks",
+      "description": "Digest at session start, recall per prompt, capture + consolidate on compaction and session end.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": [
+        "memory",
+        "yantrikdb",
+        "hooks"
+      ]
+    }
+  ]
+}
