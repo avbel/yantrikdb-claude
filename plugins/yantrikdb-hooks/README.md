@@ -62,13 +62,20 @@ probe per minute rather than a stall on every prompt.
 
 ## Install
 
-```bash
-git clone <this-repo> ~/src/yantrikdb-claude
-```
-
 In Claude Code:
 
 ```
+/plugin marketplace add avbel/yantrikdb-claude
+/plugin install yantrikdb-hooks@yantrikdb-claude
+```
+
+This tracks the GitHub repo directly, so `/plugin marketplace update
+yantrikdb-claude` picks up new releases without a local checkout.
+
+For local development against a clone instead:
+
+```bash
+git clone https://github.com/avbel/yantrikdb-claude ~/src/yantrikdb-claude
 /plugin marketplace add ~/src/yantrikdb-claude
 /plugin install yantrikdb-hooks@yantrikdb-claude
 ```
