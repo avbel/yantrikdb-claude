@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
@@ -120,6 +121,34 @@ def fetch_digest(db, ns: str) -> dict:
         return {}
 
 
+def _is_conflict(exc: Exception) -> bool:
+    """True when the server refused because a session is already open.
+
+    The HTTP backend raises `requests.HTTPError`, whose message is only the
+    status line; the reason lives in the response body.
+    """
+    body = getattr(getattr(exc, "response", None), "text", "") or ""
+    return "session conflict" in body.lower()
+
+
+def start_tracking(db, ns: str, client_id: str) -> str:
+    """Open a tracked session, taking a fresh slot if ours is still occupied.
+
+    A session id is only stored after SessionStart returns, so a run that was
+    killed leaves a session open on the server with no way to close it. Retry
+    once under a salted client id rather than leaving this whole session
+    untracked until someone reaps the orphan by hand.
+    """
+    try:
+        return ydb.as_id(ydb.flex(db.session_start, namespace=ns, client_id=client_id))
+    except Exception as e:  # noqa: BLE001
+        if not _is_conflict(e):
+            raise
+        salted = f"{client_id}-{int(time.time())}"
+        ydb.log(f"session conflict on {client_id}, retrying as {salted}")
+        return ydb.as_id(ydb.flex(db.session_start, namespace=ns, client_id=salted))
+
+
 def main() -> None:
     ydb.guard(ydb.env_int("YANTRIKDB_HOOKS_TIMEOUT", 25))
     event = ydb.read_event()
@@ -149,7 +178,7 @@ def main() -> None:
 
     if ydb.env_flag("YANTRIKDB_HOOKS_TRACK_SESSION", True):
         try:
-            rid = ydb.as_id(ydb.flex(db.session_start, namespace=ns))
+            rid = start_tracking(db, ns, ydb.client_id_for(session_id))
             if rid:
                 ydb.write_state(session_id, ydb_session_id=rid, namespace=ns)
         except Exception as e:  # noqa: BLE001
@@ -170,4 +199,7 @@ def main() -> None:
     ydb.emit_context(EVENT, text)
 
 
-ydb.run(main)
+# Guarded so the module can be imported (by tests) without running the hook;
+# run.sh always invokes it as a script.
+if __name__ == "__main__":
+    ydb.run(main)

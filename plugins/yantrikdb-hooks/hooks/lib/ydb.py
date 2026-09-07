@@ -193,6 +193,25 @@ def namespace_for(cwd: str | None) -> str:
     return f"{_slug(root.name) or 'project'}-{digest}"
 
 
+# ── client id ────────────────────────────────────────────────────────────────
+
+def client_id_for(session_id: str) -> str:
+    """Client identifier for a tracked session.
+
+    The server keys an active session on (namespace, client_id), so every
+    client that leaves the id empty contends for one slot per namespace: a
+    session that never closed (SessionEnd killed, machine slept) blocks every
+    later one with a 500. Deriving the id from the Claude Code session id
+    gives each session its own slot, so an orphan can only ever block its own
+    successor rather than the whole namespace.
+    """
+    explicit = os.environ.get("YANTRIKDB_HOOKS_CLIENT_ID", "").strip()
+    if explicit:
+        return explicit
+    slug = _slug(session_id or "")[:48]
+    return f"claude-code-{slug}" if slug else "claude-code"
+
+
 # ── plugin state ─────────────────────────────────────────────────────────────
 
 _MARKER = "unreachable.json"

@@ -117,6 +117,7 @@ All settings are environment variables, read at hook time.
 | `YANTRIKDB_HOOKS_NAMESPACE` | `default` | Memory namespace. `auto` derives a per-project namespace: the git `origin` repository name when there is one, otherwise `<basename>-<6-char path hash>` so two projects called `api` do not share memories. |
 | `YANTRIKDB_HOOKS_ADOPT_MCP_ENV` | `1` | Read `YANTRIKDB_*` from the MCP server definition when not set in the environment. |
 | `YANTRIKDB_HOOKS_MCP_SERVER` | `yantrikdb` | Name of that MCP server entry. |
+| `YANTRIKDB_HOOKS_CLIENT_ID` | derived | Client identifier for the tracked session. Defaults to `claude-code-<Claude Code session id>`; set it only to pin a fixed identity. |
 | `YANTRIKDB_HOOKS_HTTP_TIMEOUT` | `3` | Per-request timeout against an HTTP cluster (seconds); also the health-probe budget. |
 | `YANTRIKDB_HOOKS_UNREACHABLE_TTL` | `60` | How long a failed probe keeps the cluster marked down (seconds). |
 | `YANTRIKDB_HOOKS_REDACT` | `1` | Mask credential-shaped strings before text is stored. |
@@ -176,6 +177,16 @@ Lines already drafted in this session are skipped.
 seeded on `bundled` fails to open once it has rows unless `yantrikdb-mcp[onnx]`
 is installed. Set the variable explicitly and set it for both the hooks and the
 MCP server.
+
+**One tracked session per client, not per namespace.** The server keys an
+active session on `(namespace, client_id)`, so a client that leaves `client_id`
+empty gets one slot for the whole namespace: a session that never closed —
+SessionEnd killed, machine slept — makes every later `session_start` fail with
+`session conflict`, and there is no HTTP endpoint that lists sessions to find
+the orphan. The hooks send `client_id` derived from the Claude Code session id,
+so each session owns its own slot. A conflict can then only come from a rerun
+of the *same* session (a resume after a hard kill), which is retried once under
+a salted id rather than leaving the session untracked.
 
 **Engine version skew is handled.** The Rust engine and the HTTP backend take
 different keyword arguments across builds and raise `TypeError` rather than
