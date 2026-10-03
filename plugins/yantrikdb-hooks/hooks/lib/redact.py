@@ -25,7 +25,12 @@ _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}"), _TOKEN),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[redacted aws key]"),
     (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), _TOKEN),
-    (re.compile(r"(?i)\b(api[_-]?key|secret|token|password|passwd|pwd)\b\s*[:=]\s*['\"]?([^\s'\",;]{8,})"),
+    # OAuth redirect URLs pasted from a browser carry live codes in the query.
+    (re.compile(r"(?i)([?&#](?:code|state|access_token|refresh_token|id_token|client_secret|token|key|sig|signature)=)[^&\s#]+"),
+     r"\1[redacted]"),
+    (re.compile(r"\b4/0A[A-Za-z0-9_-]{20,}"), _TOKEN),
+    (re.compile(r"(?i)\b((?:access|refresh|id|auth|client)[_-]?(?:token|secret)|api[_-]?key|secret|token|password|passwd|pwd)\b"
+                r"\s*[:=]\s*['\"]?([^\s'\",;&]{8,})"),
      r"\1=[redacted]"),
     (re.compile(r"\b[A-Fa-f0-9]{48,}\b"), "[redacted hex]"),
 )

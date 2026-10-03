@@ -5,7 +5,8 @@ Deterministic recall: the model no longer has to decide to search before it
 can know it should have. Guardrails, because this runs on every turn:
 
   * short/trivial prompts and slash commands are skipped;
-  * hits below a score floor are dropped rather than padded to top_k;
+  * captured prompts, other agents' namespaces and hits without a real
+    semantic match are dropped (see relevance.py) rather than padded to top_k;
   * rids already injected this session are not injected again;
   * the prompt is redacted before it is mirrored into the working-memory ring.
 """
@@ -18,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 
 import redact  # noqa: E402
+import relevance  # noqa: E402
 import ydb  # noqa: E402
 
 EVENT = "UserPromptSubmit"
@@ -29,11 +31,13 @@ def _hit(row, field, default=None):
     return getattr(row, field, default)
 
 
-def render_hits(hits, seen: list, floor: float) -> tuple[list[str], list[str]]:
+def render_hits(hits, seen: list, floor: float, limit: int | None = None) -> tuple[list[str], list[str]]:
     """Bullet lines for unseen hits above the floor, and the rids they used."""
     lines: list[str] = []
     fresh: list[str] = []
     for row in hits or []:
+        if limit is not None and len(lines) >= limit:
+            break
         rid = _hit(row, "rid") or _hit(row, "id")
         score = _hit(row, "score", 0.0) or 0.0
         text = (_hit(row, "text") or _hit(row, "snippet") or "").strip()
@@ -50,6 +54,12 @@ def render_hits(hits, seen: list, floor: float) -> tuple[list[str], list[str]]:
         flag = f"  [weak: {note}]" if note else ""
         lines.append(f"- {text}{flag}")
     return lines, fresh
+
+
+def select_lines(hits, seen: list) -> tuple[list[str], list[str]]:
+    kept = relevance.filter_hits(hits, **relevance.config())
+    return render_hits(kept, seen, ydb.env_float("YANTRIKDB_HOOKS_MIN_SCORE", 0.10),
+                       limit=ydb.env_int("YANTRIKDB_HOOKS_TOP_K", 3))
 
 
 def main() -> None:
@@ -70,8 +80,8 @@ def main() -> None:
     ydb.adopt_mcp_env(cwd)
     session_id = event.get("session_id") or ""
     ns = ydb.namespace_for(cwd)
-    top_k = ydb.env_int("YANTRIKDB_HOOKS_TOP_K", 5)
-    floor = ydb.env_float("YANTRIKDB_HOOKS_MIN_SCORE", 0.10)
+    # Over-fetch: the relevance gate usually discards most of the raw hits.
+    candidates = ydb.env_int("YANTRIKDB_HOOKS_CANDIDATES", 10)
 
     db = ydb.open_db()
     if db is None:
@@ -81,10 +91,10 @@ def main() -> None:
     try:
         # The HTTP backend swallows min_score_ratio via **kw; older embedded
         # builds without it are handled by flex.
-        hits = ydb.flex(
-            db.recall,
+        hits = ydb.recall_rows(
+            db,
             query=query,
-            top_k=top_k,
+            top_k=candidates,
             namespace=None if ns == "default" else ns,
             expand_entities=True,
             min_score_ratio=0.55,
@@ -109,8 +119,15 @@ def main() -> None:
 
     state = ydb.read_state(session_id)
     seen = list(state.get("injected_rids") or [])
-    lines, fresh = render_hits(hits, seen, floor)
+    lines, fresh = select_lines(hits, seen)
+    if ydb.env_flag("YANTRIKDB_HOOKS_DEBUG", False):
+        cfg = relevance.config()
+        verdicts = [((_hit(h, "rid") or "?")[:8],
+                     relevance.noise_reason(h, include_captured=cfg["include_captured"], excluded=cfg["excluded"]),
+                     relevance.semantic_similarity(_hit(h, "why_retrieved"))) for h in hits or []]
+        ydb.log(f"recall verdicts (rid, noise, similarity): {verdicts}")
     if not lines:
+        ydb.log(f"recall: nothing relevant among {len(hits or [])} hits")
         ydb.emit()
 
     ydb.write_state(session_id, injected_rids=ydb.merge_rids(seen, fresh))
@@ -124,4 +141,5 @@ def main() -> None:
     ydb.emit_context(EVENT, body)
 
 
-ydb.run(main)
+if __name__ == "__main__":
+    ydb.run(main)

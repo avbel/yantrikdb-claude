@@ -9,7 +9,7 @@ class RedactTests(unittest.TestCase):
 
     def test_known_token_shapes_are_masked(self):
         cases = [
-            "token is ydb_b427b6b03ee9bd45994180816bb2ebcae1b78f58293fb76cac41b6fd0d2303af ok",
+            "token is ydb_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef ok",
             "key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMN",
             "gh token ghp_abcdefghijklmnopqrstuvwxyz0123456789",
             "aws AKIAIOSFODNN7EXAMPLE here",
@@ -21,9 +21,24 @@ class RedactTests(unittest.TestCase):
         for text in cases:
             out = self.redact.redact(text)
             self.assertIn("[redacted", out, text)
-            for secret in ("b427b6b0", "abcdefghijklmnopqrstuvwxyz0123456789", "IOSFODNN7",
+            for secret in ("0123456789abcdef0123", "abcdefghijklmnopqrstuvwxyz0123456789", "IOSFODNN7",
                            "s3cretpassword", "MIIEow", "eyJzdWIi"):
                 self.assertNotIn(secret, out, text)
+
+    def test_oauth_codes_and_tokens_are_masked(self):
+        cases = {
+            "http://localhost:1/?state=BKZmldtWuKQARBVuymiy&iss=https://accounts.google.com&code=4/0AXlqoi6mfZ8khB6jehDKnWG&scope=email":
+                ("BKZmldtWuKQARBVuymiy", "0AXlqoi6mfZ8khB6jehDKnWG"),
+            "paste the code 4/0AVGzR1Bc3dEfGhIjKlMnOpQrStUvWxYz here": ("0AVGzR1Bc3dEfGhIjKlMnOpQrStUvWxYz",),
+            "access_token=ya29.a0AfH6SMBx3yZ9QWERTYuiopasdfgh refresh_token: 1//0gLmNoPqRsTuVwXyZ12345":
+                ("ya29.a0AfH6SMBx3yZ9QWERTYuiopasdfgh", "1//0gLmNoPqRsTuVwXyZ12345"),
+            "client_secret=GOCSPX-abcdefghijklmnop": ("GOCSPX-abcdefghijklmnop",),
+        }
+        for text, secrets in cases.items():
+            out = self.redact.redact(text)
+            for secret in secrets:
+                self.assertNotIn(secret, out, text)
+        self.assertIn("accounts.google.com", self.redact.redact(next(iter(cases))))
 
     def test_assignments_are_masked_but_key_names_kept(self):
         out = self.redact.redact("set API_KEY=abcdefgh12345678 and password: hunter2hunter2")

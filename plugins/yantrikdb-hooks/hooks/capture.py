@@ -8,8 +8,9 @@ engine is explicitly designed to have called often.
 
 Capture writes DRAFT memories via draft_memories_from_summary — the engine
 atomizes the transcript tail into candidate facts rather than storing the raw
-log. The text is redacted first. Set YANTRIKDB_HOOKS_CAPTURE=0 to disable if
-the drafts get noisy.
+log. The text is redacted first. Capture is opt-in (YANTRIKDB_HOOKS_CAPTURE=1):
+in practice the drafts stayed near-verbatim user prompts, and consolidation
+later relabeled them as user-sourced facts.
 """
 
 from __future__ import annotations
@@ -33,6 +34,9 @@ def _mark(line: str) -> str:
 
 
 def capture(db, event: dict, state: dict, session_id: str, ns: str, which: str) -> None:
+    if transcript.is_headless(event.get("transcript_path")):
+        ydb.log(f"capture({which}) skipped: headless SDK session")
+        return
     rows = transcript.lines(
         event.get("transcript_path"),
         max_turns=ydb.env_int("YANTRIKDB_HOOKS_CAPTURE_TURNS", 40),
@@ -98,8 +102,10 @@ def main() -> None:
             ydb.drop_state(session_id)
         ydb.emit()
 
-    if ydb.env_flag("YANTRIKDB_HOOKS_CAPTURE", True):
+    if ydb.capture_enabled():
         capture(db, event, state, session_id, ns, which)
+    else:
+        ydb.log(f"capture({which}) disabled")
 
     if which == "SessionEnd":
         finish_session(db, state)
@@ -109,4 +115,5 @@ def main() -> None:
     ydb.emit()
 
 
-ydb.run(main)
+if __name__ == "__main__":
+    ydb.run(main)

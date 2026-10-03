@@ -12,10 +12,10 @@ This plugin makes the same path deterministic by wiring it to lifecycle hooks:
 
 | Hook | What runs | Effect |
 |------|-----------|--------|
-| `SessionStart` | `session_digest()` + `session_start()` | The boot briefing is in context before the first token. Falls back to the most recent records when the digest is still empty. |
-| `UserPromptSubmit` | `recall(query=<prompt>)` + `record_turn()` | Relevant memories are injected on every substantive prompt, whether or not the model would have searched. |
-| `PreCompact` | `draft_memories_from_summary()` | Captures the transcript tail at the one moment context loss is certain and scheduled. |
-| `SessionEnd` | capture + `session_end()` + `run_maintenance_cycle()` | Closes the tracked session and runs one hygiene cycle (consolidation, conflict scan, decay). |
+| `SessionStart` | `session_digest()` + `session_start()` | The boot briefing (live, non-superseded decisions) is in context before the first token. Falls back to the most recent records when the digest is still empty. |
+| `UserPromptSubmit` | `recall(query=<prompt>)` + `record_turn()` | Memories that pass the relevance gate are injected on every substantive prompt, whether or not the model would have searched. |
+| `PreCompact` | `draft_memories_from_summary()` | Opt-in: captures the transcript tail at the one moment context loss is certain and scheduled. |
+| `SessionEnd` | (opt-in capture) + `session_end()` + `run_maintenance_cycle()` | Closes the tracked session and runs one hygiene cycle (consolidation, conflict scan, decay). |
 
 Text that goes into memory (the per-prompt ring and the drafted transcript
 tail) is passed through a secret-redaction filter first, and Claude Code's own
@@ -123,17 +123,23 @@ All settings are environment variables, read at hook time.
 | `YANTRIKDB_HOOKS_REDACT` | `1` | Mask credential-shaped strings before text is stored. |
 | `YANTRIKDB_HOOKS_STATE_MAX_AGE_DAYS` | `7` | Per-session state older than this is swept at session start. |
 | `YANTRIKDB_HOOKS_DIGEST` | `1` | Inject the boot digest at session start. |
-| `YANTRIKDB_HOOKS_GAPS` | `1` | Fold known-unknowns into the digest. |
+| `YANTRIKDB_HOOKS_GAPS` | follows `DIGEST_MAINTENANCE` | Fold known-unknowns into the digest. |
+| `YANTRIKDB_HOOKS_DIGEST_DECISIONS` | `5` | Max decisions in the digest (superseded and excluded-namespace rows are dropped first). |
+| `YANTRIKDB_HOOKS_DIGEST_MAINTENANCE` | `0` | Also show open conflicts, pending triggers and known gaps in the digest. |
 | `YANTRIKDB_HOOKS_FALLBACK` | `1` | Show recent records when the digest is empty. |
 | `YANTRIKDB_HOOKS_RECENT` | `6` | How many records the fallback shows. |
 | `YANTRIKDB_HOOKS_TRACK_SESSION` | `1` | Open/close a tracked YantrikDB session. |
 | `YANTRIKDB_HOOKS_RECALL` | `1` | Recall on each prompt. |
-| `YANTRIKDB_HOOKS_TOP_K` | `5` | Max hits injected per prompt. |
+| `YANTRIKDB_HOOKS_TOP_K` | `3` | Max hits injected per prompt. |
+| `YANTRIKDB_HOOKS_CANDIDATES` | `10` | Hits fetched before the relevance gate. |
+| `YANTRIKDB_HOOKS_MIN_SIMILARITY` | `0.60` | Semantic-lane cosine (from `why_retrieved`) an injected hit needs; hits found only through keyword or graph lanes are dropped. `0` disables the gate. |
+| `YANTRIKDB_HOOKS_EXCLUDE_NAMESPACES` | — | Comma-separated namespace prefixes never injected, e.g. `hermes:` to keep another agent's raw chat out. |
+| `YANTRIKDB_HOOKS_RECALL_CAPTURED` | follows `CAPTURE` | Inject auto-captured prompts and merges made of them. |
 | `YANTRIKDB_HOOKS_MIN_SCORE` | `0.10` | Absolute score floor for an injected hit. |
 | `YANTRIKDB_HOOKS_MIN_PROMPT_CHARS` | `24` | Prompts shorter than this are skipped. |
 | `YANTRIKDB_HOOKS_RECORD_TURNS` | `1` | Mirror user turns into the working-memory ring. |
 | `YANTRIKDB_HOOKS_RING_SIZE` | `20` | Ring buffer size. |
-| `YANTRIKDB_HOOKS_CAPTURE` | `1` | Draft memories on compaction / session end. |
+| `YANTRIKDB_HOOKS_CAPTURE` | `0` | Draft memories from user turns on compaction / session end. |
 | `YANTRIKDB_HOOKS_CAPTURE_ROLES` | `user` | `user` or `all`. See below. |
 | `YANTRIKDB_HOOKS_CAPTURE_TURNS` | `40` | Transcript tail length considered. |
 | `YANTRIKDB_HOOKS_CAPTURE_CHARS` | `6000` | Cap on drafted text. |
@@ -160,6 +166,25 @@ If you set store settings in both places, the top-level `env` wins for the
 hooks, so keep the values identical.
 
 ## Design notes
+
+**Recall is gated, not padded.** Measured on a four-week, ~1,100-record store:
+39 % of injected bullets were auto-captured prompts, 10 % came from another
+agent's chat namespace, and an injected memory carried new information the
+model then used in under 2 % of prompts. The gate in `lib/relevance.py`
+drops auto-captured prompts, consolidation merges made only of them (they
+come back relabeled `source=user`, so the merge is detected from
+`consolidated_from` plus short, `|`-joined segments), optionally excluded namespaces, and hits without a semantic-lane similarity
+of at least 0.60 (calibrated for the bundled 64-dim embedder; re-check it after
+switching the server to MiniLM-384). Over HTTP the
+hooks query `/v1/recall` directly, because the `yantrikdb-mcp` client drops
+`source`, `namespace` and `metadata` from every row. Replaying 1,078 real
+prompts: injections on 62 % of prompts instead of 99 %, 56 % less injected
+text, roughly four times the precision.
+
+**Capture is opt-in.** The drafts stayed near-verbatim user prompts
+("commit and push") and were 65 % of the active store. When enabled,
+compaction summaries, continuation boilerplate, harness notices, pasted
+blocks and headless SDK sessions are skipped.
 
 **Capture defaults to user turns only.** Assistant turns are the model's own
 claims. Drafting them into long-term memory is how a memory store poisons
@@ -196,7 +221,9 @@ sent only to that side.
 
 **Redaction is best-effort.** Private-key blocks, bearer tokens and JWTs,
 credentials in URLs, well-known key prefixes (`sk-`, `ghp_`, `AKIA`, `xox`,
-`ydb_`), `key=value` assignments for names like `password` or `api_key`, and
+`ydb_`), OAuth codes and tokens in pasted redirect URLs (`code=`, `state=`,
+`access_token=`, Google `4/0…` codes), `key=value` assignments for names like
+`password`, `api_key` or `client_secret`, and
 very long hex strings are masked. It is a conservative filter, not a DLP
 engine; do not paste secrets into prompts and expect the memory store to be
 the thing that saves you.

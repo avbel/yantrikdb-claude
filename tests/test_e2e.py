@@ -33,7 +33,8 @@ class HooksEndToEnd(unittest.TestCase):
         with sandbox() as root, env(
             YANTRIKDB_SERVER_URL=None, YANTRIKDB_TOKEN=None, YANTRIKDB_HOOKS_ADOPT_MCP_ENV="0",
             YANTRIKDB_DB_PATH=str(root / "mem.db"), YANTRIKDB_EMBEDDER="bundled",
-            YANTRIKDB_HOOKS_NAMESPACE="auto", YANTRIKDB_HOOKS_DEBUG="1",
+            YANTRIKDB_HOOKS_NAMESPACE="auto", YANTRIKDB_HOOKS_DEBUG="1", YANTRIKDB_HOOKS_CAPTURE=None,
+            YANTRIKDB_HOOKS_MIN_SIMILARITY=None,
         ):
             data = Path(os.environ["CLAUDE_PLUGIN_DATA"])
             t = root / "t.jsonl"
@@ -52,6 +53,15 @@ class HooksEndToEnd(unittest.TestCase):
             out, _ = _hook("user_prompt_submit.py", {**base, "prompt": "/model something long enough"})
             self.assertIsNone(out, "slash command skipped")
 
+            out, err = _hook("capture.py", {**base, "trigger": "auto"}, "PreCompact")
+            self.assertIsNone(out)
+            self.assertIn("capture(PreCompact) disabled", err, "capture is opt-in")
+            self.assertNotIn("drafted", err)
+
+            os.environ["YANTRIKDB_HOOKS_CAPTURE"] = "1"
+            # A two-record store is matched through the keyword lane only; the
+            # engine annotates no semantic similarity, so the gate is off here.
+            os.environ["YANTRIKDB_HOOKS_MIN_SIMILARITY"] = "0"
             out, err = _hook("capture.py", {**base, "trigger": "auto"}, "PreCompact")
             self.assertIsNone(out)
             self.assertIn("drafted", err)

@@ -10,8 +10,8 @@
       "name": "yantrikdb-hooks",
       "displayName": "YantrikDB Hooks",
       "source": "./plugins/yantrikdb-hooks",
-      "description": "Digest at session start, recall per prompt, capture + consolidate on compaction and session end.",
-      "version": "0.1.2",
+      "description": "Digest at session start, relevance-gated recall per prompt, opt-in capture, consolidation at session end.",
+      "version": "0.2.0",
       "license": "MIT",
       "keywords": [
         "memory",

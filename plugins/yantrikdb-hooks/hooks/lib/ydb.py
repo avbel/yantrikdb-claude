@@ -76,6 +76,12 @@ def env_float(name: str, default: float) -> float:
         return default
 
 
+def capture_enabled() -> bool:
+    """Off by default: drafted user turns were 65 % of a measured store and
+    almost never useful when recalled. Opt in with YANTRIKDB_HOOKS_CAPTURE=1."""
+    return env_flag("YANTRIKDB_HOOKS_CAPTURE", False)
+
+
 # ── MCP server config adoption ───────────────────────────────────────────────
 
 _ADOPTABLE_PREFIX = "YANTRIKDB_"
@@ -388,6 +394,39 @@ def _open_embedded():
     raise last  # type: ignore[misc]
 
 
+def _http_post(path: str, body: dict, requests_module=None) -> dict:
+    """POST to the first gateway node that answers; reads may go to any node."""
+    if requests_module is None:
+        import requests as requests_module
+    nodes = [u.strip().rstrip("/") for u in os.environ.get("YANTRIKDB_SERVER_URL", "").split(",") if u.strip()]
+    token = os.environ.get("YANTRIKDB_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    timeout = max(1, env_int("YANTRIKDB_HOOKS_HTTP_TIMEOUT", 3))
+    last: Exception | None = None
+    for node in nodes:
+        try:
+            response = requests_module.post(f"{node}{path}", json=body, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as error:  # noqa: BLE001
+            last = error
+    raise last or RuntimeError("YANTRIKDB_SERVER_URL is not set")
+
+
+def recall_rows(db, *, query: str, top_k: int, namespace: str | None = None, **kwargs) -> list:
+    """Recall rows that keep source, namespace and metadata.
+
+    yantrikdb_mcp's HttpBackend.recall rebuilds every row without them, which
+    blinds the relevance gate, so over HTTP the gateway is asked directly.
+    """
+    if not is_http(db):
+        return list(flex(db.recall, query=query, top_k=top_k, namespace=namespace, **kwargs) or [])
+    body = {"query": query, "top_k": top_k, "expand_entities": kwargs.get("expand_entities", True)}
+    if namespace:
+        body["namespace"] = namespace
+    return list(_http_post("/v1/recall", body).get("results") or [])
+
+
 def is_http(db) -> bool:
     return type(db).__name__ == "HttpBackend"
 
@@ -471,8 +510,8 @@ def recent_records(db, ns: str, limit: int) -> tuple[list, str]:
     except Exception as e:  # noqa: BLE001
         log(f"list_memories failed: {e}")
     try:
-        rows = flex(db.recall, query="recent decisions, preferences and project context",
-                    top_k=limit, namespace=ns_arg, expand_entities=True)
+        rows = recall_rows(db, query="recent decisions, preferences and project context",
+                           top_k=limit, namespace=ns_arg, expand_entities=True)
         return list(rows or []), "most relevant records"
     except Exception as e:  # noqa: BLE001
         log(f"fallback recall failed: {e}")
