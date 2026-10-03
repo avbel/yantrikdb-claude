@@ -104,7 +104,7 @@ class ConfigTests(unittest.TestCase):
                  YANTRIKDB_HOOKS_RECALL_CAPTURED=None, YANTRIKDB_HOOKS_CAPTURE=None):
             cfg = self.rel.config()
         self.assertEqual(cfg["excluded"], (), "no namespace is excluded unless configured")
-        self.assertAlmostEqual(cfg["min_similarity"], 0.6)
+        self.assertAlmostEqual(cfg["min_similarity"], 0.5)
         self.assertFalse(cfg["include_captured"])
 
     def test_recall_of_captures_follows_capture_flag(self):

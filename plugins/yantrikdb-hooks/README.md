@@ -132,7 +132,7 @@ All settings are environment variables, read at hook time.
 | `YANTRIKDB_HOOKS_RECALL` | `1` | Recall on each prompt. |
 | `YANTRIKDB_HOOKS_TOP_K` | `3` | Max hits injected per prompt. |
 | `YANTRIKDB_HOOKS_CANDIDATES` | `10` | Hits fetched before the relevance gate. |
-| `YANTRIKDB_HOOKS_MIN_SIMILARITY` | `0.60` | Semantic-lane cosine (from `why_retrieved`) an injected hit needs; hits found only through keyword or graph lanes are dropped. `0` disables the gate. |
+| `YANTRIKDB_HOOKS_MIN_SIMILARITY` | `0.50` | Semantic-lane cosine (from `why_retrieved`) an injected hit needs; hits found only through keyword or graph lanes are dropped. `0` disables the gate. |
 | `YANTRIKDB_HOOKS_EXCLUDE_NAMESPACES` | — | Comma-separated namespace prefixes never injected, e.g. `hermes:` to keep another agent's raw chat out. |
 | `YANTRIKDB_HOOKS_RECALL_CAPTURED` | follows `CAPTURE` | Inject auto-captured prompts and merges made of them. |
 | `YANTRIKDB_HOOKS_MIN_SCORE` | `0.10` | Absolute score floor for an injected hit. |
@@ -174,8 +174,8 @@ model then used in under 2 % of prompts. The gate in `lib/relevance.py`
 drops auto-captured prompts, consolidation merges made only of them (they
 come back relabeled `source=user`, so the merge is detected from
 `consolidated_from` plus short, `|`-joined segments), optionally excluded namespaces, and hits without a semantic-lane similarity
-of at least 0.60 (calibrated for the bundled 64-dim embedder; re-check it after
-switching the server to MiniLM-384). Over HTTP the
+of at least 0.50 (calibrated for a server on MiniLM-384; use about 0.60 with
+the bundled 64-dim embedder). Over HTTP the
 hooks query `/v1/recall` directly, because the `yantrikdb-mcp` client drops
 `source`, `namespace` and `metadata` from every row. Replaying 1,078 real
 prompts: injections on 62 % of prompts instead of 99 %, 56 % less injected

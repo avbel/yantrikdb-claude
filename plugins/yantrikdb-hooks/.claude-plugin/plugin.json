@@ -2,7 +2,7 @@
   "name": "yantrikdb-hooks",
   "displayName": "YantrikDB Hooks",
   "description": "Deterministic cognitive memory for Claude Code: injects the YantrikDB boot digest at session start, recalls relevance-gated memories on every prompt, and consolidates at session end (capture is opt-in).",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Andrey Belchikov",
     "url": "https://github.com/avbel"

@@ -6,7 +6,9 @@ source=user / domain=general, so the source field alone cannot catch them.
 Merges of curated facts were never shorter than 825 chars, merges of prompts
 had a median of 194. The 64-dim bundled embedder squeezes blended scores into
 0.3-0.65 for relevant and irrelevant hits alike, so the gate uses the cosine of
-the semantic lane that the engine reports in `why_retrieved` instead.
+the semantic lane that the engine reports in `why_retrieved` instead. With
+the server on MiniLM-384, a 0.50 floor kept 13/18 known answers and silenced
+12/12 irrelevant prompts (the bundled 64-dim embedder needs about 0.60).
 """
 
 from __future__ import annotations
@@ -92,6 +94,6 @@ def config() -> dict:
     excluded = tuple(p.strip() for p in raw.split(",") if p.strip())
     return {
         "excluded": excluded,
-        "min_similarity": env_float("YANTRIKDB_HOOKS_MIN_SIMILARITY", 0.60),
+        "min_similarity": env_float("YANTRIKDB_HOOKS_MIN_SIMILARITY", 0.50),
         "include_captured": env_flag("YANTRIKDB_HOOKS_RECALL_CAPTURED", capture_enabled()),
     }
